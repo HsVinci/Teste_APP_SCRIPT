@@ -1,0 +1,69 @@
+/**
+ * @OnlyCurrentDoc
+ * Este script verifica uma pasta específica do Google Drive e lista
+ * os nomes de novos arquivos em uma Planilha Google.
+ */
+
+// --- CONFIGURAÇÃO ---
+// Substitua os valores abaixo pelos IDs da sua pasta e planilha.
+const ID_PASTA_X = '1TWoIbP34Q_cezvw1Y1cOZx35hV2esyud';
+const ID_PLANILHA = '1C90FFSuuNWitPJypRE2UjQW9yOA8AYBe7A_PC1JOhu8';
+const NOME_DA_ABA = 'Página1'; // Altere para o nome da sua aba/página.
+// --------------------
+
+/**
+ * Função principal que é executada pelo acionador (trigger).
+ */
+function verificarNovosArquivos() {
+  try {
+    // Acessa a planilha e a aba especificada.
+    const spreadsheet = SpreadsheetApp.openById(ID_PLANILHA);
+    const sheet = spreadsheet.getSheetByName(NOME_DA_ABA);
+
+    if (!sheet) {
+      throw new Error(`A aba com o nome "${NOME_DA_ABA}" não foi encontrada.`);
+    }
+
+    // Pega a lista de nomes de arquivos que já estão na planilha para evitar duplicatas.
+    let arquivosJaListados = [];
+    // Só tenta ler a lista de arquivos se houver mais do que apenas o cabeçalho (mais de 1 linha).
+    if (sheet.getLastRow() > 1) {
+      const range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1);
+      arquivosJaListados = range.getValues().flat();
+    }
+
+    // Acessa a pasta do Drive.
+    const pasta = DriveApp.getFolderById(ID_PASTA_X);
+    const arquivosNaPasta = pasta.getFiles();
+
+    // Array para guardar os novos arquivos a serem adicionados.
+    const novasLinhas = [];
+
+    // Itera sobre cada arquivo na pasta.
+    while (arquivosNaPasta.hasNext()) {
+      const arquivo = arquivosNaPasta.next();
+      const nomeDoArquivo = arquivo.getName();
+
+      // Verifica se o nome do arquivo AINDA NÃO está na lista da planilha.
+      if (arquivosJaListados.indexOf(nomeDoArquivo) === -1) {
+        // Se for um arquivo novo, adiciona seu nome e a data/hora atual ao array.
+        novasLinhas.push([nomeDoArquivo, new Date()]);
+        // Adiciona também à lista de verificação para não adicionar o mesmo arquivo duas vezes nesta execução.
+        arquivosJaListados.push(nomeDoArquivo);
+      }
+    }
+
+    // Se houver novos arquivos, adiciona todos de uma vez na planilha.
+    if (novasLinhas.length > 0) {
+      // Adiciona um cabeçalho se a planilha estiver vazia.
+      if (sheet.getLastRow() === 0) {
+        sheet.appendRow(['Nome do Arquivo', 'Data de Adição']);
+      }
+      sheet.getRange(sheet.getLastRow() + 1, 1, novasLinhas.length, 2).setValues(novasLinhas);
+    }
+
+  } catch (error) {
+    // Em caso de erro, registra a mensagem no console do Apps Script para depuração.
+    Logger.log(`Erro ao executar o script: ${error.message}`);
+  }
+}
