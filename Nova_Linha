@@ -1,0 +1,104 @@
+/**
+ * @OnlyCurrentDoc
+ * Este script verifica uma pasta do Google Drive, extrai informações do nome
+ * dos arquivos (ID, Nascimento, Data do Exame) e os lista em uma Planilha Google,
+ * com as entradas mais recentes no topo.
+ */
+
+// --- CONFIGURAÇÃO ---
+// IDs da sua pasta e planilha.
+const ID_PASTA_X = '1TWoIbP34Q_cezvw1Y1cOZx35hV2esyud';
+const ID_PLANILHA = '1C90FFSuuNWitPJypRE2UjQW9yOA8AYBe7A_PC1JOhu8';
+const NOME_DA_ABA = 'Página1'; // Altere para o nome da sua aba/página.
+// --------------------
+
+/**
+ * Formata uma string de data no formato YYMMDD para DD/MM/YY.
+ * @param {string} dataString A data no formato "YYMMDD".
+ * @returns {string} A data formatada.
+ */
+function formatarDataNascimento(dataString) {
+  if (dataString.length !== 6) return dataString; // Retorna original se o formato for inválido
+  const ano = dataString.substring(0, 2); // Mantém o ano com 2 dígitos
+  const mes = dataString.substring(2, 4);
+  const dia = dataString.substring(4, 6);
+  return `${dia}/${mes}/${ano}`;
+}
+
+/**
+ * Formata uma string de data/hora no formato YYMMDDHHMMSS para DD/MM/YY HH:MM:SS.
+ * @param {string} dataString A data e hora no formato "YYMMDDHHMMSS".
+ * @returns {string} A data e hora formatadas.
+ */
+function formatarDataExame(dataString) {
+  if (dataString.length !== 12) return dataString; // Retorna original se o formato for inválido
+  const ano = dataString.substring(0, 2); // Mantém o ano com 2 dígitos
+  const mes = dataString.substring(2, 4);
+  const dia = dataString.substring(4, 6);
+  const hora = dataString.substring(6, 8);
+  const minuto = dataString.substring(8, 10);
+  const segundo = dataString.substring(10, 12);
+  return `${dia}/${mes}/${ano} ${hora}:${minuto}:${segundo}`;
+}
+
+
+/**
+ * Função principal que é executada pelo acionador (trigger).
+ */
+function verificarNovosArquivos() {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(ID_PLANILHA);
+    const sheet = spreadsheet.getSheetByName(NOME_DA_ABA);
+
+    if (!sheet) {
+      throw new Error(`A aba com o nome "${NOME_DA_ABA}" não foi encontrada.`);
+    }
+
+    // Pega a lista de nomes de arquivos que já estão na planilha para evitar duplicatas.
+    let arquivosJaListados = [];
+    if (sheet.getLastRow() > 1) {
+      const range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1);
+      arquivosJaListados = range.getValues().flat();
+    }
+
+    const pasta = DriveApp.getFolderById(ID_PASTA_X);
+    const arquivosNaPasta = pasta.getFiles();
+    const novasLinhas = [];
+
+    while (arquivosNaPasta.hasNext()) {
+      const arquivo = arquivosNaPasta.next();
+      const nomeDoArquivo = arquivo.getName();
+
+      if (arquivosJaListados.indexOf(nomeDoArquivo) === -1) {
+        const partes = nomeDoArquivo.split('_');
+
+        if (partes.length === 3) {
+          const id = partes[0];
+          const nascimento = formatarDataNascimento(partes[1]);
+          const dataExame = formatarDataExame(partes[2]);
+          novasLinhas.push([nomeDoArquivo, id, nascimento, dataExame]);
+        } else {
+          novasLinhas.push([nomeDoArquivo, 'FORMATO INVÁLIDO', '', '']);
+        }
+        
+        arquivosJaListados.push(nomeDoArquivo);
+      }
+    }
+
+    if (novasLinhas.length > 0) {
+      // Adiciona um cabeçalho se a planilha estiver completamente vazia.
+      if (sheet.getLastRow() === 0) {
+        sheet.appendRow(['Nome Original', 'ID', 'Nascimento', 'Data_exame']);
+      }
+      
+      // Insere novas linhas logo após o cabeçalho (linha 1).
+      sheet.insertRowsAfter(1, novasLinhas.length);
+      
+      // Adiciona os dados nas novas linhas criadas.
+      sheet.getRange(2, 1, novasLinhas.length, 4).setValues(novasLinhas);
+    }
+
+  } catch (error) {
+    Logger.log(`Erro ao executar o script: ${error.message}`);
+  }
+}
