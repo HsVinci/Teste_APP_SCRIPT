@@ -1,0 +1,106 @@
+/**
+ * @OnlyCurrentDoc
+ * Este script verifica uma pasta do Google Drive, extrai informações do nome
+ * dos arquivos (ID, Nascimento, Data do Exame) e os lista em uma Planilha Google.
+ */
+
+// --- CONFIGURAÇÃO ---
+// Substitua os valores abaixo pelos IDs da sua pasta e planilha.
+const ID_PASTA_X = '1TWoIbP34Q_cezvw1Y1cOZx35hV2esyud';
+const ID_PLANILHA = '1C90FFSuuNWitPJypRE2UjQW9yOA8AYBe7A_PC1JOhu8';
+const NOME_DA_ABA = 'Página1'; // Altere para o nome da sua aba/página.
+// --------------------
+
+/**
+ * Formata uma string de data no formato YYMMDD para DD/MM/YYYY.
+ * @param {string} dataString A data no formato "YYMMDD".
+ * @returns {string} A data formatada.
+ */
+function formatarDataNascimento(dataString) {
+  if (dataString.length !== 6) return dataString; // Retorna original se o formato for inválido
+  const ano = dataString.substring(0, 2);
+  const mes = dataString.substring(2, 4);
+  const dia = dataString.substring(4, 6);
+  return `${dia}/${mes}/${ano}`;
+}
+
+/**
+ * Formata uma string de data/hora no formato YYMMDDHHMMSS para DD/MM/YYYY HH:MM:SS.
+ * @param {string} dataString A data e hora no formato "YYMMDDHHMMSS".
+ * @returns {string} A data e hora formatadas.
+ */
+function formatarDataExame(dataString) {
+  if (dataString.length !== 12) return dataString; // Retorna original se o formato for inválido
+  const ano = dataString.substring(0, 2);
+  const mes = dataString.substring(2, 4);
+  const dia = dataString.substring(4, 6);
+  const hora = dataString.substring(6, 8);
+  const minuto = dataString.substring(8, 10);
+  const segundo = dataString.substring(10, 12);
+  return `${dia}/${mes}/${ano} ${hora}:${minuto}:${segundo}`;
+}
+
+
+/**
+ * Função principal que é executada pelo acionador (trigger).
+ */
+function verificarNovosArquivos() {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(ID_PLANILHA);
+    const sheet = spreadsheet.getSheetByName(NOME_DA_ABA);
+
+    if (!sheet) {
+      throw new Error(`A aba com o nome "${NOME_DA_ABA}" não foi encontrada.`);
+    }
+
+    // Pega a lista de nomes de arquivos que já estão na planilha para evitar duplicatas.
+    // A checagem é feita na primeira coluna, que guardará o nome original do arquivo.
+    let arquivosJaListados = [];
+    if (sheet.getLastRow() > 1) {
+      const range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1);
+      arquivosJaListados = range.getValues().flat();
+    }
+
+    const pasta = DriveApp.getFolderById(ID_PASTA_X);
+    const arquivosNaPasta = pasta.getFiles();
+    const novasLinhas = [];
+
+    while (arquivosNaPasta.hasNext()) {
+      const arquivo = arquivosNaPasta.next();
+      const nomeDoArquivo = arquivo.getName();
+
+      // Verifica se o nome do arquivo AINDA NÃO está na lista da planilha.
+      if (arquivosJaListados.indexOf(nomeDoArquivo) === -1) {
+        const partes = nomeDoArquivo.split('_');
+
+        // Verifica se o nome do arquivo tem o formato esperado (3 partes).
+        if (partes.length === 3) {
+          const id = partes[0];
+          const nascimento = formatarDataNascimento(partes[1]);
+          const dataExame = formatarDataExame(partes[2]);
+          
+          // Adiciona a linha com os dados separados e formatados.
+          novasLinhas.push([nomeDoArquivo, id, nascimento, dataExame]);
+        } else {
+          // Se o nome não estiver no padrão, adiciona apenas o nome do arquivo.
+          novasLinhas.push([nomeDoArquivo, 'FORMATO INVÁLIDO', '', '']);
+        }
+        
+        // Adiciona à lista de verificação para não processar duas vezes na mesma execução.
+        arquivosJaListados.push(nomeDoArquivo);
+      }
+    }
+
+    if (novasLinhas.length > 0) {
+      // Adiciona um cabeçalho se a planilha estiver vazia.
+      if (sheet.getLastRow() === 0) {
+        sheet.appendRow(['Nome Original', 'ID', 'Nascimento', 'Data_exame']);
+      }
+      // Adiciona as novas linhas com 4 colunas de dados.
+      sheet.getRange(sheet.getLastRow() + 1, 1, novasLinhas.length, 4).setValues(novasLinhas);
+    }
+
+  } catch (error) {
+    Logger.log(`Erro ao executar o script: ${error.message}`);
+  }
+}
