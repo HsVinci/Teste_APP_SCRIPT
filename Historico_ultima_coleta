@@ -1,0 +1,80 @@
+/**
+ * @OnlyCurrentDoc
+ *
+ * Este script encontra o arquivo com a data de criação mais recente
+ * em uma pasta específica do Google Drive e insere essa data em
+ * uma célula de uma planilha Google.
+ */
+function encontrarDataMaisRecente() {
+  // --- CONFIGURAÇÕES ---
+  // Substitua os valores abaixo com as suas informações.
+
+  // 1. ID da sua pasta do Google Drive.
+  // O ID é a parte final da URL quando você abre a pasta.
+  // Exemplo: .../folders/AQUI_VAI_O_ID_DA_PASTA
+  const ID_PASTA = '1TWoIbP34Q_cezvw1Y1cOZx35hV2esyud';
+
+  // 2. ID da sua planilha Google.
+  // O ID está na URL da planilha.
+  // Exemplo: .../d/AQUI_VAI_O_ID_DA_PLANILHA/edit
+  const ID_PLANILHA = '1C90FFSuuNWitPJypRE2UjQW9yOA8AYBe7A_PC1JOhu8';
+
+  // 3. Nome exato da aba (página) da sua planilha onde a data será inserida.
+  const NOME_ABA = 'Página1';
+
+  // 4. Célula de destino para a data (ex: "A1", "B2", etc.).
+  const CELULA_DESTINO = 'A1';
+  // --- FIM DAS CONFIGURAÇÕES ---
+
+  try {
+    // Acessa a pasta no Google Drive usando o ID fornecido
+    const pasta = DriveApp.getFolderById(ID_PASTA);
+
+    // Pega todos os arquivos que estão dentro da pasta
+    const arquivos = pasta.getFiles();
+
+    // Variável para armazenar a data mais recente encontrada.
+    // Começa como nula.
+    let dataMaisRecente = null;
+
+    // Itera sobre cada arquivo na pasta para encontrar o mais recente.
+    // O loop continua enquanto houver um próximo arquivo.
+    while (arquivos.hasNext()) {
+      const arquivo = arquivos.next();
+      const dataCriacao = arquivo.getDateCreated();
+
+      // Compara a data de criação do arquivo atual com a data mais recente já armazenada.
+      // Se 'dataMaisRecente' ainda for nula (primeiro arquivo do loop) ou
+      // se a data do arquivo atual for mais nova, ela é armazenada.
+      if (dataMaisRecente === null || dataCriacao > dataMaisRecente) {
+        dataMaisRecente = dataCriacao;
+      }
+    }
+
+    // Após verificar todos os arquivos, confere se alguma data foi encontrada.
+    // Se a pasta não estiver vazia, 'dataMaisRecente' terá um valor.
+    if (dataMaisRecente) {
+      // Acessa a planilha pelo ID
+      const planilha = SpreadsheetApp.openById(ID_PLANILHA);
+      // Acessa a aba específica pelo nome
+      const aba = planilha.getSheetByName(NOME_ABA);
+
+      // Verifica se a aba com o nome especificado realmente existe
+      if (aba) {
+        // Escreve a data mais recente na célula de destino
+        aba.getRange(CELULA_DESTINO).setValue(dataMaisRecente);
+        // Registra uma mensagem de sucesso no log de execuções
+        Logger.log('Data mais recente (' + dataMaisRecente.toLocaleString() + ') inserida com sucesso na célula ' + CELULA_DESTINO);
+      } else {
+        // Se a aba não for encontrada, registra um erro no log
+        Logger.log('Erro: A aba com o nome "' + NOME_ABA + '" não foi encontrada na planilha.');
+      }
+    } else {
+      // Se a pasta estiver vazia, registra um aviso no log
+      Logger.log('Nenhum arquivo foi encontrado na pasta com o ID especificado.');
+    }
+  } catch (e) {
+    // Captura e registra qualquer outro erro que possa ocorrer durante a execução
+    Logger.log('Ocorreu um erro inesperado: ' + e.message);
+  }
+}
