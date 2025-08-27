@@ -1,0 +1,146 @@
+/**
+ * @OnlyCurrentDoc
+ * Este script verifica uma pasta do Google Drive, extrai informações do nome
+ * dos arquivos (ID, Nascimento, Data do Exame) e os lista em uma Planilha Google,
+ * com as entradas mais recentes no topo.
+ * Otimizado para processar apenas arquivos novos e evitar duplicatas após um reset.
+ */
+
+// --- CONFIGURAÇÃO ---
+// IDs da sua pasta e planilha.
+const ID_PASTA_X = '1btAl39hd-AdJ3Ty8LNROWO01hMpVDWcY';
+const ID_PLANILHA = '1C90FFSuuNWitPJypRE2UjQW9yOA8AYBe7A_PC1JOhu8';
+const NOME_DA_ABA = 'Página1'; // Altere para o nome da sua aba/página.
+// --------------------
+
+/**
+ * FUNÇÃO DE RESET: Execute esta função manualmente UMA VEZ para limpar a 
+ * memória do script e forçá-lo a verificar todos os arquivos novamente.
+ */
+function resetarUltimaExecucao() {
+  try {
+    PropertiesService.getScriptProperties().deleteProperty('ULTIMA_EXECUCAO');
+    // Mostra uma mensagem de confirmação para o usuário.
+    SpreadsheetApp.getUi().alert('Memória da última execução foi resetada com sucesso!');
+  } catch (e) {
+    SpreadsheetApp.getUi().alert('Erro ao resetar: ' + e.message);
+  }
+}
+
+
+/**
+ * Formata uma string de data no formato YYMMDD para DD/MM/YY.
+ * @param {string} dataString A data no formato "YYMMDD".
+ * @returns {string} A data formatada ou uma string vazia se a entrada for inválida.
+ */
+function formatarDataNascimento(dataString) {
+  if (!dataString || dataString.length !== 6) return ''; 
+  const ano = dataString.substring(0, 2);
+  const mes = dataString.substring(2, 4);
+  const dia = dataString.substring(4, 6);
+  return `${dia}/${mes}/${ano}`;
+}
+
+/**
+ * Formata uma string de data/hora no formato YYMMDDHHMMSS e retorna a data e a hora separadamente.
+ * @param {string} dataString A data e hora no formato "YYMMDDHHMMSS".
+ * @returns {Array<string>} Um array contendo a data [0] e a hora [1] formatadas.
+ */
+function formatarDataHorarioExame(dataString) {
+  if (!dataString || dataString.length !== 12) return ['', ''];
+  const ano = dataString.substring(0, 2);
+  const mes = dataString.substring(2, 4);
+  const dia = dataString.substring(4, 6);
+  const hora = dataString.substring(6, 8);
+  const minuto = dataString.substring(8, 10);
+  const segundo = dataString.substring(10, 12);
+  
+  const dataFormatada = `${dia}/${mes}/${ano}`;
+  const horarioFormatado = `${hora}:${minuto}:${segundo}`;
+  
+  return [dataFormatada, horarioFormatado];
+}
+
+
+/**
+ * Função principal que é executada pelo acionador (trigger).
+ */
+function Funcao_principal() {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(ID_PLANILHA);
+    const sheet = spreadsheet.getSheetByName(NOME_DA_ABA);
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const ultimaExecucao = scriptProperties.getProperty('ULTIMA_EXECUCAO');
+    
+    Logger.log('Última execução registrada: ' + ultimaExecucao);
+    
+    const horaAtualISO = new Date().toISOString();
+
+    if (!sheet) {
+      throw new Error(`A aba com o nome "${NOME_DA_ABA}" não foi encontrada.`);
+    }
+
+    // *** ALTERAÇÃO PRINCIPAL: Lê todos os nomes de arquivos já existentes na planilha ***
+    let arquivosJaListados = [];
+    if (sheet.getLastRow() > 1) { // Garante que há dados além do cabeçalho
+      const range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1);
+      arquivosJaListados = range.getValues().flat();
+    }
+    Logger.log(arquivosJaListados.length + ' arquivos já listados na planilha.');
+    
+    let searchQuery = `'${ID_PASTA_X}' in parents and trashed = false`;
+    
+    if (ultimaExecucao) {
+      searchQuery += ` and modifiedDate > '${ultimaExecucao}'`;
+    }
+    
+    Logger.log('Consulta de busca no Drive: ' + searchQuery);
+    
+    const arquivosNovos = DriveApp.searchFiles(searchQuery);
+    const novasLinhas = [];
+
+    if (!arquivosNovos.hasNext()) {
+      Logger.log('Nenhum arquivo novo foi encontrado com base na consulta do Drive.');
+    }
+
+    while (arquivosNovos.hasNext()) {
+      const arquivo = arquivosNovos.next();
+      const nomeOriginalComExtensao = arquivo.getName();
+      
+      // *** DUPLA VERIFICAÇÃO: Confere se o nome do arquivo já existe na lista da planilha ***
+      if (arquivosJaListados.indexOf(nomeOriginalComExtensao) === -1) {
+        Logger.log('Processando arquivo NOVO encontrado: ' + nomeOriginalComExtensao);
+        
+        const nomeSemExtensao = nomeOriginalComExtensao.replace(/\.rffx?$/i, '');
+        const partes = nomeSemExtensao.split('_');
+        const dataDeAdicao = arquivo.getLastUpdated();
+
+        if (partes.length === 3) {
+          const id = partes[0];
+          const nascimento = formatarDataNascimento(partes[1]);
+          const [dataExame, horarioExame] = formatarDataHorarioExame(partes[2]);
+          novasLinhas.push([nomeOriginalComExtensao, id, nascimento, dataExame, horarioExame, dataDeAdicao]);
+        } else {
+          novasLinhas.push([nomeOriginalComExtensao, 'FORMATO INVÁLIDO', '', '', '', dataDeAdicao]);
+        }
+      } else {
+        Logger.log('Ignorando arquivo já existente na planilha: ' + nomeOriginalComExtensao);
+      }
+    }
+
+    if (novasLinhas.length > 0) {
+      if (sheet.getLastRow() === 0) {
+        sheet.appendRow(['Nome Original', 'ID', 'Nascimento', 'Data_exame', 'Horario_exame', 'Data de Adição']);
+      }
+      
+      sheet.insertRowsAfter(1, novasLinhas.length);
+      sheet.getRange(2, 1, novasLinhas.length, 6).setValues(novasLinhas);
+      Logger.log(novasLinhas.length + ' novas linhas foram adicionadas à planilha.');
+    }
+    
+    scriptProperties.setProperty('ULTIMA_EXECUCAO', horaAtualISO);
+
+  } catch (error) {
+    Logger.log(`ERRO: ${error.message} na linha ${error.lineNumber}`);
+  }
+}
