@@ -1,0 +1,95 @@
+/**
+ * @OnlyCurrentDoc
+ *
+ * Este script encontra o arquivo com a data de criação mais recente
+ * em uma pasta do Google Drive e insere essa data no topo de uma lista
+ * em uma planilha, criando um histórico sem duplicatas.
+ */
+function encontrarDataMaisRecente() {
+  // --- CONFIGURAções ---
+  // Substitua os valores abaixo com as suas informações.
+
+  // 1. ID da sua pasta do Google Drive.
+  const ID_PASTA = '1btAl39hd-AdJ3Ty8LNROWO01hMpVDWcY';
+
+  // 2. ID da sua planilha Google.
+  const ID_PLANILHA = '1usrzEQ1U5FMuIsDX0pYfVg0qP2NTQTwwot8gKGnXMLg';
+
+  // 3. Nome exato da aba (página) da sua planilha.
+  const NOME_ABA = 'ERG';
+
+  // 4. Célula de destino para o CABEÇALHO (ex: "A1").
+  // O histórico de datas será criado abaixo desta célula.
+  const CELULA_CABECALHO = 'A1';
+  // --- FIM DAS CONFIGURAções ---
+
+  try {
+    // Acessa a pasta no Google Drive usando o ID fornecido
+    const pasta = DriveApp.getFolderById(ID_PASTA);
+    const arquivos = pasta.getFiles();
+
+    let dataMaisRecente = null;
+
+    // Itera sobre cada arquivo na pasta para encontrar o mais recente.
+    while (arquivos.hasNext()) {
+      const arquivo = arquivos.next();
+      const dataCriacao = arquivo.getDateCreated();
+
+      // Compara a data de criação do arquivo atual com a data mais recente já armazenada.
+      if (dataMaisRecente === null || dataCriacao > dataMaisRecente) {
+        dataMaisRecente = dataCriacao;
+      }
+    }
+
+    // Se uma data foi encontrada (a pasta não está vazia)
+    if (dataMaisRecente) {
+      const planilha = SpreadsheetApp.openById(ID_PLANILHA);
+      const aba = planilha.getSheetByName(NOME_ABA);
+
+      if (aba) {
+        // --- LÓGICA DE ATUALIZAÇÃO DO HISTÓRICO ---
+
+        // 1. Define e formata o cabeçalho (isso garante que ele esteja sempre correto)
+        const celulaCabecalho = aba.getRange(CELULA_CABECALHO);
+        celulaCabecalho.setValue('Data ultima coleta');
+        celulaCabecalho.setBackground('#cccccc'); // Cor de fundo cinza
+        celulaCabecalho.setFontWeight('bold');   // Texto em negrito
+
+        // 2. Formata a nova data encontrada no Drive para o padrão dd/MM/yyyy
+        const fusoHorario = planilha.getSpreadsheetTimeZone();
+        const dataNovaFormatada = Utilities.formatDate(dataMaisRecente, fusoHorario, 'dd/MM/yyyy');
+
+        // 3. Pega o valor de exibição da última data registrada (como texto)
+        const celulaUltimaData = celulaCabecalho.offset(1, 0);
+        const ultimaDataRegistrada = celulaUltimaData.getDisplayValue(); // CORREÇÃO APLICADA AQUI
+
+        // 4. Compara a string da nova data com a string da última data registrada.
+        if (ultimaDataRegistrada !== dataNovaFormatada) {
+          // Se as datas forem diferentes ou se não houver data anterior, insere a nova.
+          
+          // Insere uma nova linha logo abaixo do cabeçalho
+          aba.insertRowAfter(1);
+
+          // Pega a primeira célula da nova linha (que agora é A2)
+          const celulaParaInserir = aba.getRange(2, 1);
+
+          // Insere a data formatada e ajusta a célula
+          celulaParaInserir.setValue(dataNovaFormatada);
+          celulaParaInserir.setBackground('#ffffff'); // Garante o fundo branco
+
+          Logger.log('Nova data (' + dataNovaFormatada + ') inserida com sucesso no topo do histórico.');
+        } else {
+          // Se as datas forem iguais, não faz nada e apenas registra no log.
+          Logger.log('Nenhuma data nova adicionada. A data mais recente (' + dataNovaFormatada + ') já está no topo do histórico.');
+        }
+
+      } else {
+        Logger.log('Erro: A aba com o nome "' + NOME_ABA + '" não foi encontrada.');
+      }
+    } else {
+      Logger.log('Nenhum arquivo foi encontrado na pasta.');
+    }
+  } catch (e) {
+    Logger.log('Ocorreu um erro inesperado: ' + e.message);
+  }
+}
